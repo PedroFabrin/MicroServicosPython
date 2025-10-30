@@ -16,74 +16,74 @@ class AddCustomer(BaseModel):
     name: str
     tipo: str
 
-queue: List[Customer] = []
+priority_queue: List[Customer] = []
+normal_queue: List[Customer] = []
+
+def get_merged_queue() -> List[Customer]:
+    merged = [c for c in priority_queue if not c.attended] + [c for c in normal_queue if not c.attended]
+    for i, c in enumerate(merged, start=1):
+        c.position = i
+    return merged
 
 @app.get("/fila", response_model=List[Customer])
 def get_queue():
-    return [c for c in queue if not c.attended]
+    return get_merged_queue()
 
 @app.get("/fila/{id}", response_model=Customer)
 def get_customer(id: int):
-    for c in queue:
+    merged = get_merged_queue()
+    for c in merged:
         if not c.attended and c.position == id:
             return c
     raise HTTPException(status_code=404, detail="Customer not found.")
 
 @app.post("/fila", response_model=dict)
 def add_customer(customer: AddCustomer):
-    if len(customer.name) == 0:
-        raise HTTPException(status_code=404, detail="Name is mandatory")
+    if len(customer.name) == 0 or len(customer.name) > 20:
+        raise HTTPException(status_code=404, detail="Name is mandatory and not longer than 20 characters.")
     if len(customer.tipo) != 1 or customer.tipo not in ['N', 'P']:
         raise HTTPException(status_code=400, detail="Field tipo only accept N (Normal), P (Prioritário)")
 
-    queue_count = len([c for c in queue if not c.attended])
-    next_position = queue_count + 1
-
     new_customer = Customer(
-        position=next_position,
+        position=0,
         name=customer.name,
         arrival=datetime.now(),
         tipo=customer.tipo,
         attended=False
     )
 
-    queue.append(new_customer)
+    if customer.tipo == 'P':
+        priority_queue.append(new_customer)
+    else:
+        normal_queue.append(new_customer)
+
+    merged = get_merged_queue()
+    next_position = len(merged)
     return {"message": "Customer add successfully", "position": next_position}
 
 @app.put("/fila", response_model=dict)
 def call_next_customer():
-    first_customer = None
-    for c in queue:
-        if not c.attended and c.position == 1:
-            first_customer = c
-            break
-
-    if first_customer is None:
-        raise HTTPException(status_code=404, detail="Customer Not Found")
-
-    first_customer.position = 0
-    first_customer.attended = True
-
-    for c in queue:
-        if not c.attended and c.position > 1:
-            c.position -= 1
-    return {"message": "Next customer called successfully"}
+    if priority_queue and not priority_queue[0].attended:
+        next_customer = priority_queue.pop(0)
+        next_customer.attended = True
+        next_customer.position = 0
+        return {"message": "Priority customer called successfully"}
+    if normal_queue and not normal_queue[0].attended:
+        next_customer = normal_queue.pop(0)
+        next_customer.attended = True
+        next_customer.position = 0
+        return {"message": "Normal customer called successfully"}
+    return {"message": "Queue Empty"}
 
 @app.delete("/fila/{id}", response_model=dict)
 def delete_customer(id: int):
-    customer_to_remove = None
-    for c in queue:
-        if not c.attended and c.position == id:
-            customer_to_remove = c
-            break
-
-    if customer_to_remove is None:
-        raise HTTPException(status_code=404, detail="Customer Not Found")
-
-    queue.remove(customer_to_remove)
-
-    for c in queue:
-        if not c.attended and c.position > id:
-            c.position -= 1
+    merged = get_merged_queue()
+    if id > len(merged) or id < 1:
+        raise HTTPException(status_code=404, detail="Customer not found.")
+    customer = merged[id - 1]
+    if customer.tipo == 'P':
+        priority_queue.remove(customer)
+    else:
+        normal_queue.remove(customer)
 
     return {"message": "Customer deleted successfully"}

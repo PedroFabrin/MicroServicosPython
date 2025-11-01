@@ -41,7 +41,7 @@ def get_customer(id: int):
 def add_customer(customer: AddCustomer):
     if len(customer.name) == 0 or len(customer.name) > 20:
         raise HTTPException(status_code=404, detail="Name is mandatory and not longer than 20 characters.")
-    if len(customer.tipo) != 1 or customer.tipo not in ['N', 'P']:
+    if len(customer.tipo) != 1 and customer.tipo not in ['N', 'P']:
         raise HTTPException(status_code=400, detail="Field tipo only accept N (Normal), P (Prioritário)")
 
     new_customer = Customer(
